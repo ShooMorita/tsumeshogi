@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tsume Shogi Solver</title>
+  </head>
+  <body>
+    <main id="app">
+      <section class="workspace">
+        <div class="controls">
+          <textarea id="board-input" spellcheck="false"></textarea>
+          <div class="actions">
+            <label>
+              Max ply
+              <input id="max-ply" type="number" min="1" max="127" step="2" value="7" />
+            </label>
+            <button id="solve-button" type="button">Solve</button>
+            <button id="prev-button" type="button" disabled>Prev</button>
+            <button id="next-button" type="button" disabled>Next</button>
+          </div>
+          <output id="status">WASM build required before solving in the browser.</output>
+        </div>
+        <canvas id="board-canvas" width="760" height="640"></canvas>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

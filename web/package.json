@@ -1,0 +1,15 @@
+{
+  "scripts": {
+    "dev": "../scripts/dev_web.sh",
+    "build": "../scripts/build_web.sh",
+    "preview": "../scripts/preview_web.sh",
+    "dev:local": "vite --host 0.0.0.0",
+    "build:local": "tsc && vite build",
+    "preview:local": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "vite": "^5.4.0",
+    "typescript": "^5.5.0"
+  },
+  "devDependencies": {}
+}

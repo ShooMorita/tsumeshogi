@@ -1,0 +1,10 @@
+.git/
+build/
+web/dist/
+web/node_modules/
+web/src/wasm/*.js
+web/src/wasm/*.wasm
+*.o
+a.out
+.DS_Store
+*.log
