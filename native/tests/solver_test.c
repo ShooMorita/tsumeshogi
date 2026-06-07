@@ -30,7 +30,7 @@ static void build_drop_mate(Board* board)
 static bool line_contains_drop(const TsumeLine* line)
 {
     for (int i = 0; i < line->count; i++) {
-        if (line->moves[i].drop)
+        if (line->moves[i].kind == MOVE_DROP)
             return true;
     }
     return false;

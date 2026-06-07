@@ -67,14 +67,19 @@ typedef struct {
     char message[128];
 } TsumeParseResult;
 
+typedef enum {
+    MOVE_NORMAL,
+    MOVE_PROMOTE,
+    MOVE_DROP,
+} MoveKind;
+
 typedef struct {
     Koma piece;
     Koma captured;
     Teban side;
     int from;
     int to;
-    bool drop;
-    bool promote;
+    MoveKind kind;
 } Move;
 
 typedef struct {

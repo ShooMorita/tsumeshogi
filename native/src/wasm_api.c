@@ -85,26 +85,38 @@ static void append_board_json(char* buffer, size_t bufferSize, size_t* offset, c
     append_board_value_json(buffer, bufferSize, offset, board);
 }
 
+static const char* move_kind_code(MoveKind kind)
+{
+    switch (kind) {
+    case MOVE_NORMAL:
+        return "normal";
+    case MOVE_PROMOTE:
+        return "promote";
+    case MOVE_DROP:
+        return "drop";
+    }
+    return "normal";
+}
+
 static void append_move_json(char* buffer, size_t bufferSize, size_t* offset, const Move* move)
 {
     append_format(buffer, bufferSize, offset,
-        "{\"piece\":\"%s\",\"side\":\"%s\",\"from\":",
+        "{\"piece\":\"%s\",\"side\":\"%s\",\"kind\":\"%s\",\"from\":",
         tsume_koma_code(move->piece),
-        tsume_teban_name(move->side));
-    if (move->drop) {
+        tsume_teban_name(move->side),
+        move_kind_code(move->kind));
+    if (move->kind == MOVE_DROP) {
         append_text(buffer, bufferSize, offset, "null");
     } else {
         append_format(buffer, bufferSize, offset, "{\"row\":%d,\"col\":%d}", tsume_square_row(move->from), tsume_square_col(move->from));
     }
     append_format(buffer, bufferSize, offset,
-        ",\"to\":{\"row\":%d,\"col\":%d},\"drop\":%s,\"promote\":%s,\"display\":\"%s%s%s\"}",
+        ",\"to\":{\"row\":%d,\"col\":%d},\"display\":\"%s%s%s\"}",
         tsume_square_row(move->to),
         tsume_square_col(move->to),
-        move->drop ? "true" : "false",
-        move->promote ? "true" : "false",
         tsume_koma_name(move->piece),
-        move->drop ? "打" : "",
-        move->promote ? "成" : "");
+        move->kind == MOVE_DROP ? "打" : "",
+        move->kind == MOVE_PROMOTE ? "成" : "");
 }
 
 static void append_frames_json(char* buffer, size_t bufferSize, size_t* offset, const Board* initialBoard, const TsumeLine* line)

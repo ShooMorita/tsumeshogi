@@ -10,10 +10,9 @@ type Square = {
 type Move = {
   piece: string;
   side: 'sente' | 'gote';
+  kind: 'normal' | 'promote' | 'drop';
   from: { row: number; col: number } | null;
   to: { row: number; col: number };
-  drop: boolean;
-  promote: boolean;
   display: string;
 };
 

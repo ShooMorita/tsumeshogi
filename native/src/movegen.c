@@ -65,16 +65,23 @@ static void add_step_move(const Board* board, Teban side, int from, int to, Move
     if (target != NO_KOMA && tsume_board_square_side(board, to) == side)
         return;
 
-    Move move = { board->squares[from], target, side, from, to, false, false };
+    Move move = {
+        .piece = board->squares[from],
+        .captured = target,
+        .side = side,
+        .from = from,
+        .to = to,
+        .kind = MOVE_NORMAL,
+    };
     int fromRow = tsume_square_row(from);
     int toRow = tsume_square_row(to);
     if (tsume_can_promote(move.piece) && (is_promotion_zone(side, fromRow) || is_promotion_zone(side, toRow))) {
         if (must_promote(side, move.piece, toRow)) {
-            move.promote = true;
+            move.kind = MOVE_PROMOTE;
             add_move(list, &move);
         } else {
             add_move(list, &move);
-            move.promote = true;
+            move.kind = MOVE_PROMOTE;
             add_move(list, &move);
         }
         return;
@@ -180,7 +187,14 @@ static void generate_drop_moves(const Board* board, Teban side, MoveList* list)
                 continue;
             if (piece == FU && file_has_unpromoted_pawn(board, side, col))
                 continue;
-            Move move = { piece, NO_KOMA, side, -1, square, true, false };
+            Move move = {
+                .piece = piece,
+                .captured = NO_KOMA,
+                .side = side,
+                .from = -1,
+                .to = square,
+                .kind = MOVE_DROP,
+            };
             add_move(list, &move);
         }
     }
@@ -188,8 +202,8 @@ static void generate_drop_moves(const Board* board, Teban side, MoveList* list)
 
 void tsume_apply_move(Board* board, const Move* move)
 {
-    Koma placedPiece = move->promote ? tsume_promote(move->piece) : move->piece;
-    if (move->drop) {
+    Koma placedPiece = move->kind == MOVE_PROMOTE ? tsume_promote(move->piece) : move->piece;
+    if (move->kind == MOVE_DROP) {
         board->mochigoma[move->side][move->piece]--;
     } else {
         if (move->captured != NO_KOMA)
