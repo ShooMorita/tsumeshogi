@@ -51,6 +51,21 @@ static bool file_has_unpromoted_pawn(const Board* board, Teban side, int col)
     return false;
 }
 
+static bool path_is_clear(const Board* board, int fromRow, int fromCol, int targetRow, int targetCol, int dr, int dc)
+{
+    int row = fromRow + dr;
+    int col = fromCol + dc;
+    while (row != targetRow || col != targetCol) {
+        if (!in_board(row, col))
+            return false;
+        if (board->squares[tsume_square_index(row, col)] != NO_KOMA)
+            return false;
+        row += dr;
+        col += dc;
+    }
+    return true;
+}
+
 static void add_move(MoveList* list, const Move* move)
 {
     if (list->count < MAX_MOVES)
@@ -225,19 +240,45 @@ static int find_king(const Board* board, Teban side)
 
 static bool piece_attacks_square(const Board* board, int from, int target)
 {
-    MoveList* pseudoMoves = (MoveList*)calloc(1, sizeof(*pseudoMoves));
-    if (!pseudoMoves)
-        return false;
-
+    Koma piece = board->squares[from];
     Teban side = tsume_board_square_side(board, from);
-    generate_piece_moves(board, side, from, pseudoMoves);
-    for (int i = 0; i < pseudoMoves->count; i++) {
-        if (pseudoMoves->moves[i].to == target) {
-            free(pseudoMoves);
-            return true;
-        }
+    int forward = side == SENTE ? -1 : 1;
+    int fromRow = tsume_square_row(from);
+    int fromCol = tsume_square_col(from);
+    int targetRow = tsume_square_row(target);
+    int targetCol = tsume_square_col(target);
+    int dr = targetRow - fromRow;
+    int dc = targetCol - fromCol;
+
+    if (piece == FU)
+        return dr == forward && dc == 0;
+    if (piece == KYO)
+        return dc == 0 && dr * forward > 0 && path_is_clear(board, fromRow, fromCol, targetRow, targetCol, forward, 0);
+    if (piece == KEI)
+        return dr == forward * 2 && (dc == -1 || dc == 1);
+    if (piece == GIN)
+        return (dr == forward && (dc == -1 || dc == 0 || dc == 1)) || (dr == -forward && (dc == -1 || dc == 1));
+    if (piece == KIN || is_promoted_gold_like(piece))
+        return (dr == forward && (dc == -1 || dc == 0 || dc == 1)) || (dr == 0 && (dc == -1 || dc == 1)) || (dr == -forward && dc == 0);
+    if (piece == KAKU || piece == UMA) {
+        if (abs(dr) == abs(dc) && dr != 0)
+            return path_is_clear(board, fromRow, fromCol, targetRow, targetCol, dr > 0 ? 1 : -1, dc > 0 ? 1 : -1);
+        if (piece == UMA)
+            return (abs(dr) == 1 && dc == 0) || (dr == 0 && abs(dc) == 1);
+        return false;
     }
-    free(pseudoMoves);
+    if (piece == HISHA || piece == RYU) {
+        if (dr == 0 && dc != 0)
+            return path_is_clear(board, fromRow, fromCol, targetRow, targetCol, 0, dc > 0 ? 1 : -1);
+        if (dc == 0 && dr != 0)
+            return path_is_clear(board, fromRow, fromCol, targetRow, targetCol, dr > 0 ? 1 : -1, 0);
+        if (piece == RYU)
+            return abs(dr) == 1 && abs(dc) == 1;
+        return false;
+    }
+    if (piece == GYOKU || piece == OU)
+        return abs(dr) <= 1 && abs(dc) <= 1 && (dr != 0 || dc != 0);
+
     return false;
 }
 
@@ -256,13 +297,13 @@ bool tsume_is_in_check(const Board* board, Teban side)
     return false;
 }
 
-void tsume_generate_legal_moves(const Board* board, Teban side, bool onlyCheckingMoves, MoveList* moves)
+void tsume_generate_legal_moves_with_scratch(const Board* board, Teban side, bool onlyCheckingMoves, MoveList* moves, MoveList* pseudoMoves)
 {
-    MoveList* pseudoMoves = (MoveList*)calloc(1, sizeof(*pseudoMoves));
     if (!pseudoMoves) {
         moves->count = 0;
         return;
     }
+    pseudoMoves->count = 0;
 
     for (int square = 0; square < BOARD_SQUARE_COUNT; square++) {
         if (board->squares[square] != NO_KOMA && tsume_board_square_side(board, square) == side)
@@ -281,5 +322,10 @@ void tsume_generate_legal_moves(const Board* board, Teban side, bool onlyCheckin
             continue;
         add_move(moves, &move);
     }
-    free(pseudoMoves);
+}
+
+void tsume_generate_legal_moves(const Board* board, Teban side, bool onlyCheckingMoves, MoveList* moves)
+{
+    MoveList pseudoMoves = { 0 };
+    tsume_generate_legal_moves_with_scratch(board, side, onlyCheckingMoves, moves, &pseudoMoves);
 }

@@ -1,5 +1,6 @@
 #include "src/shogi.c"
 #include "src/parser.c"
 #include "src/movegen.c"
+#include "src/memory_arena.c"
 #include "src/solver_dfpn.c"
 #include "src/wasm_api.c"

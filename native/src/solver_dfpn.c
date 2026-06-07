@@ -1,7 +1,7 @@
 #include "tsume_shogi.h"
+#include "memory_arena.h"
 
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 typedef enum {
@@ -21,6 +21,7 @@ typedef struct {
 typedef struct {
     DfpnEntry entries[DFPN_TABLE_SIZE];
     uint64_t nodes;
+    MemoryArena* arena;
 } DfpnContext;
 
 static DfpnEntry* table_lookup(DfpnContext* context, uint64_t key)
@@ -43,21 +44,20 @@ static DfpnState dfpn_search(DfpnContext* context, const Board* board, Teban sid
 
 static DfpnState solve_attacker_node(DfpnContext* context, const Board* board, int remainingPly, TsumeLine* line)
 {
-    MoveList* checkingMoves = (MoveList*)calloc(1, sizeof(*checkingMoves));
-    MoveList* defenderMoves = (MoveList*)calloc(1, sizeof(*defenderMoves));
-    TsumeLine* childLine = (TsumeLine*)calloc(1, sizeof(*childLine));
-    if (!checkingMoves || !defenderMoves || !childLine) {
-        free(checkingMoves);
-        free(defenderMoves);
-        free(childLine);
+    ArenaMark mark = arena_mark(context->arena);
+    MoveList* checkingMoves = (MoveList*)arena_alloc_zero(context->arena, sizeof(*checkingMoves));
+    MoveList* checkingScratch = (MoveList*)arena_alloc_zero(context->arena, sizeof(*checkingScratch));
+    MoveList* defenderMoves = (MoveList*)arena_alloc_zero(context->arena, sizeof(*defenderMoves));
+    MoveList* defenderScratch = (MoveList*)arena_alloc_zero(context->arena, sizeof(*defenderScratch));
+    TsumeLine* childLine = (TsumeLine*)arena_alloc_zero(context->arena, sizeof(*childLine));
+    if (!checkingMoves || !checkingScratch || !defenderMoves || !defenderScratch || !childLine) {
+        arena_rewind(context->arena, mark);
         return DFPN_DISPROVEN;
     }
 
-    tsume_generate_legal_moves(board, SENTE, true, checkingMoves);
+    tsume_generate_legal_moves_with_scratch(board, SENTE, true, checkingMoves, checkingScratch);
     if (checkingMoves->count == 0) {
-        free(checkingMoves);
-        free(defenderMoves);
-        free(childLine);
+        arena_rewind(context->arena, mark);
         return DFPN_DISPROVEN;
     }
 
@@ -67,13 +67,12 @@ static DfpnState solve_attacker_node(DfpnContext* context, const Board* board, i
         tsume_apply_move(&next, &move);
 
         defenderMoves->count = 0;
-        tsume_generate_legal_moves(&next, GOTE, false, defenderMoves);
+        defenderScratch->count = 0;
+        tsume_generate_legal_moves_with_scratch(&next, GOTE, false, defenderMoves, defenderScratch);
         if (defenderMoves->count == 0) {
             line->count = 1;
             line->moves[0] = move;
-            free(checkingMoves);
-            free(defenderMoves);
-            free(childLine);
+            arena_rewind(context->arena, mark);
             return DFPN_PROVEN;
         }
 
@@ -85,35 +84,29 @@ static DfpnState solve_attacker_node(DfpnContext* context, const Board* board, i
                 line->moves[line->count++] = move;
             for (int childIndex = 0; childIndex < childLine->count && line->count < MAX_SOLUTION_MOVES; childIndex++)
                 line->moves[line->count++] = childLine->moves[childIndex];
-            free(checkingMoves);
-            free(defenderMoves);
-            free(childLine);
+            arena_rewind(context->arena, mark);
             return DFPN_PROVEN;
         }
     }
-    free(checkingMoves);
-    free(defenderMoves);
-    free(childLine);
+    arena_rewind(context->arena, mark);
     return DFPN_DISPROVEN;
 }
 
 static DfpnState solve_defender_node(DfpnContext* context, const Board* board, int remainingPly, TsumeLine* line)
 {
-    MoveList* defenderMoves = (MoveList*)calloc(1, sizeof(*defenderMoves));
-    TsumeLine* bestLine = (TsumeLine*)calloc(1, sizeof(*bestLine));
-    TsumeLine* childLine = (TsumeLine*)calloc(1, sizeof(*childLine));
-    if (!defenderMoves || !bestLine || !childLine) {
-        free(defenderMoves);
-        free(bestLine);
-        free(childLine);
+    ArenaMark mark = arena_mark(context->arena);
+    MoveList* defenderMoves = (MoveList*)arena_alloc_zero(context->arena, sizeof(*defenderMoves));
+    MoveList* defenderScratch = (MoveList*)arena_alloc_zero(context->arena, sizeof(*defenderScratch));
+    TsumeLine* bestLine = (TsumeLine*)arena_alloc_zero(context->arena, sizeof(*bestLine));
+    TsumeLine* childLine = (TsumeLine*)arena_alloc_zero(context->arena, sizeof(*childLine));
+    if (!defenderMoves || !defenderScratch || !bestLine || !childLine) {
+        arena_rewind(context->arena, mark);
         return DFPN_DISPROVEN;
     }
 
-    tsume_generate_legal_moves(board, GOTE, false, defenderMoves);
+    tsume_generate_legal_moves_with_scratch(board, GOTE, false, defenderMoves, defenderScratch);
     if (defenderMoves->count == 0) {
-        free(defenderMoves);
-        free(bestLine);
-        free(childLine);
+        arena_rewind(context->arena, mark);
         return DFPN_PROVEN;
     }
 
@@ -125,9 +118,7 @@ static DfpnState solve_defender_node(DfpnContext* context, const Board* board, i
         childLine->count = 0;
         DfpnState childState = dfpn_search(context, &next, SENTE, remainingPly - 1, childLine);
         if (childState != DFPN_PROVEN) {
-            free(defenderMoves);
-            free(bestLine);
-            free(childLine);
+            arena_rewind(context->arena, mark);
             return DFPN_DISPROVEN;
         }
 
@@ -139,9 +130,7 @@ static DfpnState solve_defender_node(DfpnContext* context, const Board* board, i
     }
 
     *line = *bestLine;
-    free(defenderMoves);
-    free(bestLine);
-    free(childLine);
+    arena_rewind(context->arena, mark);
     return DFPN_PROVEN;
 }
 
@@ -184,17 +173,26 @@ TsumeSolveResult tsume_solve_dfpn(const Board* board, int maxPly, TsumeLine* lin
         return result;
     }
 
-    DfpnContext* context = (DfpnContext*)calloc(1, sizeof(*context));
+    MemoryArena arena;
+    if (!arena_init(&arena, 2 * 1024 * 1024)) {
+        result.status = TSUME_TIMEOUT;
+        snprintf(result.message, sizeof(result.message), "could not allocate solver arena");
+        return result;
+    }
+
+    DfpnContext* context = (DfpnContext*)arena_alloc_zero(&arena, sizeof(*context));
     if (!context) {
+        arena_destroy(&arena);
         result.status = TSUME_TIMEOUT;
         snprintf(result.message, sizeof(result.message), "could not allocate solver context");
         return result;
     }
+    context->arena = &arena;
     line->count = 0;
 
     DfpnState state = dfpn_search(context, board, SENTE, maxPly, line);
     result.nodes = context->nodes;
-    free(context);
+    arena_destroy(&arena);
     if (state == DFPN_PROVEN) {
         result.status = TSUME_OK;
         snprintf(result.message, sizeof(result.message), "mate found");

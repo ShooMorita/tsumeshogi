@@ -124,6 +124,7 @@ TsumeParseResult tsume_parse_board_text(const char* input, Board* board);
 
 bool tsume_is_in_check(const Board* board, Teban side);
 void tsume_generate_legal_moves(const Board* board, Teban side, bool onlyCheckingMoves, MoveList* moves);
+void tsume_generate_legal_moves_with_scratch(const Board* board, Teban side, bool onlyCheckingMoves, MoveList* moves, MoveList* pseudoMoves);
 void tsume_apply_move(Board* board, const Move* move);
 
 TsumeSolveResult tsume_solve_dfpn(const Board* board, int maxPly, TsumeLine* line);
