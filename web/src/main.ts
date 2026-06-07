@@ -85,6 +85,7 @@ const pieceLabels: Record<string, string> = {
 
 const textarea = document.querySelector<HTMLTextAreaElement>('#board-input')!;
 const maxPlyInput = document.querySelector<HTMLInputElement>('#max-ply')!;
+const pasteButton = document.querySelector<HTMLButtonElement>('#paste-button')!;
 const solveButton = document.querySelector<HTMLButtonElement>('#solve-button')!;
 const prevButton = document.querySelector<HTMLButtonElement>('#prev-button')!;
 const nextButton = document.querySelector<HTMLButtonElement>('#next-button')!;
@@ -93,11 +94,12 @@ const canvas = document.querySelector<HTMLCanvasElement>('#board-canvas')!;
 const context = canvas.getContext('2d')!;
 
 textarea.value = sampleInput;
+textarea.placeholder = '貼り付けボタンで盤面テキストを貼り替えられます';
 
 let initialBoard: BoardState | undefined;
 let frameStack: BoardFrame[] = [];
 let currentFrameIndex = -1;
-let latestSolverMessage = '';
+let latestResultMessage = '';
 let latestNodeCount = 0;
 
 function boardPoint(row: number, col: number) {
@@ -184,16 +186,46 @@ function updateStepButtons() {
   nextButton.disabled = currentFrameIndex + 1 >= frameStack.length;
 }
 
+function resetResultState(message: string) {
+  initialBoard = undefined;
+  frameStack = [];
+  currentFrameIndex = -1;
+  latestResultMessage = '';
+  latestNodeCount = 0;
+  drawBoard();
+  updateStepButtons();
+  statusOutput.value = message;
+}
+
+function formatSolveResult(result: SolveJson): string {
+  const status = result.solver?.status;
+  const maxPly = result.solver?.maxPly ?? Number(maxPlyInput.value);
+  const mateLength = result.frames?.length ?? 0;
+
+  if (status === 'ok')
+    return `詰みあり: ${mateLength}手詰め`;
+  if (status === 'no_mate')
+    return `詰み無し: ${maxPly}手以内`;
+  if (status === 'invalid_depth')
+    return '探索手数が不正です';
+  if (status === 'timeout')
+    return '探索が時間切れです';
+  if (result.error)
+    return `エラー: ${result.error.message}`;
+
+  return '結果を取得しました';
+}
+
 function drawCurrentFrame() {
   if (currentFrameIndex < 0) {
     drawBoard(initialBoard);
-    statusOutput.value = latestSolverMessage
-      ? `${latestSolverMessage} (${latestNodeCount} nodes): 初期局面`
+    statusOutput.value = latestResultMessage
+      ? `${latestResultMessage} (${latestNodeCount} nodes): 初期局面`
       : '初期局面';
   } else {
     const frame = frameStack[currentFrameIndex];
     drawBoard(frame.board, frame.lastMove);
-    statusOutput.value = `${latestSolverMessage} (${latestNodeCount} nodes): ${currentFrameIndex + 1}/${frameStack.length} ${frame.lastMove.display}`;
+    statusOutput.value = `${latestResultMessage} (${latestNodeCount} nodes): ${currentFrameIndex + 1}/${frameStack.length} ${frame.lastMove.display}`;
   }
 
   updateStepButtons();
@@ -203,7 +235,7 @@ function setFrameStack(result: SolveJson) {
   initialBoard = result.board;
   frameStack = result.frames ?? [];
   currentFrameIndex = -1;
-  latestSolverMessage = result.solver?.message ?? '';
+  latestResultMessage = formatSolveResult(result);
   latestNodeCount = result.solver?.nodes ?? 0;
   drawCurrentFrame();
 }
@@ -235,10 +267,16 @@ function solveWithWasm(wasm: any, input: string, maxPly: number): string {
 }
 
 async function solve() {
+  if (textarea.value.trim().length === 0) {
+    resetResultState('貼り付けボタンで盤面テキストを貼り付けてください');
+    return;
+  }
+
   solveButton.disabled = true;
+  pasteButton.disabled = true;
   prevButton.disabled = true;
   nextButton.disabled = true;
-  statusOutput.value = 'Solving...';
+  statusOutput.value = '探索中...';
   try {
     const wasm = await loadWasmModule();
     const jsonText = solveWithWasm(wasm, textarea.value, Number(maxPlyInput.value));
@@ -251,22 +289,41 @@ async function solve() {
       currentFrameIndex = -1;
       drawBoard(result.board);
       updateStepButtons();
-      statusOutput.value = `${result.error?.code}: ${result.error?.message}`;
+      statusOutput.value = formatSolveResult(result);
     }
   } catch (error) {
     initialBoard = undefined;
     frameStack = [];
     currentFrameIndex = -1;
     updateStepButtons();
-    statusOutput.value = error instanceof Error ? error.message : String(error);
+    statusOutput.value = error instanceof Error ? `エラー: ${error.message}` : `エラー: ${String(error)}`;
     drawBoard();
   } finally {
+    pasteButton.disabled = false;
     solveButton.disabled = false;
+  }
+}
+
+async function pasteBoardText() {
+  pasteButton.disabled = true;
+  try {
+    textarea.value = await navigator.clipboard.readText();
+    resetResultState('クリップボードから貼り付けました');
+  } catch (error) {
+    statusOutput.value = error instanceof Error
+      ? `クリップボードを読めませんでした: ${error.message}`
+      : `クリップボードを読めませんでした: ${String(error)}`;
+  } finally {
+    pasteButton.disabled = false;
   }
 }
 
 solveButton.addEventListener('click', () => {
   void solve();
+});
+
+pasteButton.addEventListener('click', () => {
+  void pasteBoardText();
 });
 
 prevButton.addEventListener('click', () => {

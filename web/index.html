@@ -12,14 +12,15 @@
           <textarea id="board-input" spellcheck="false"></textarea>
           <div class="actions">
             <label>
-              Max ply
+              最大手数
               <input id="max-ply" type="number" min="1" max="127" step="2" value="7" />
             </label>
-            <button id="solve-button" type="button">Solve</button>
-            <button id="prev-button" type="button" disabled>Prev</button>
-            <button id="next-button" type="button" disabled>Next</button>
+            <button id="paste-button" type="button">貼り付け</button>
+            <button id="solve-button" type="button">解く</button>
+            <button id="prev-button" type="button" disabled>前へ</button>
+            <button id="next-button" type="button" disabled>次へ</button>
           </div>
-          <output id="status">WASM build required before solving in the browser.</output>
+          <output id="status">貼り付けボタンで盤面テキストを貼り付けてください。</output>
         </div>
         <canvas id="board-canvas" width="760" height="640"></canvas>
       </section>
