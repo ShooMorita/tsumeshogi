@@ -41,7 +41,7 @@ bool arena_init(MemoryArena* arena, size_t defaultCapacity)
     arena->first = NULL;
     arena->current = NULL;
     arena->defaultCapacity = defaultCapacity;
-    return arena_add_chunk(arena, defaultCapacity);
+    return true;
 }
 
 void arena_destroy(MemoryArena* arena)

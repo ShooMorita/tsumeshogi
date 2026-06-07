@@ -12,10 +12,13 @@ typedef enum {
 
 typedef struct {
     uint64_t key;
-    int proof;
-    int disproof;
-    int remainingPly;
     bool used;
+    bool hasProven;
+    bool hasDisproven;
+    bool hasBestMove;
+    int provenPly;
+    int disprovenPly;
+    Move bestMove;
 } DfpnEntry;
 
 typedef struct {
@@ -24,20 +27,177 @@ typedef struct {
     MemoryArena* arena;
 } DfpnContext;
 
+typedef enum {
+    MOVE_ORDER_ATTACKER,
+    MOVE_ORDER_DEFENDER,
+} MoveOrderMode;
+
+static int int_abs(int value)
+{
+    return value < 0 ? -value : value;
+}
+
+static int piece_order_value(Koma piece)
+{
+    switch (piece) {
+    case FU:
+        return 100;
+    case KYO:
+    case KEI:
+        return 300;
+    case GIN:
+        return 500;
+    case KIN:
+    case TO:
+    case NARIKYO:
+    case NARIKEI:
+    case NARIGIN:
+        return 600;
+    case KAKU:
+        return 800;
+    case UMA:
+        return 900;
+    case HISHA:
+        return 1000;
+    case RYU:
+        return 1100;
+    case GYOKU:
+    case OU:
+        return 2000;
+    default:
+        return 0;
+    }
+}
+
+static int find_side_king(const Board* board, Teban side)
+{
+    for (int square = 0; square < BOARD_SQUARE_COUNT; square++) {
+        Koma piece = board->squares[square];
+        if ((piece == GYOKU || piece == OU) && tsume_board_square_side(board, square) == side)
+            return square;
+    }
+    return -1;
+}
+
+static int square_distance(int from, int to)
+{
+    if (from < 0 || to < 0)
+        return BOARD_SIZE * 2;
+    return int_abs(tsume_square_row(from) - tsume_square_row(to)) + int_abs(tsume_square_col(from) - tsume_square_col(to));
+}
+
+static int move_order_score(const Move* move, int kingSquare, MoveOrderMode mode)
+{
+    int score = 0;
+    if (mode == MOVE_ORDER_ATTACKER) {
+        score += (BOARD_SIZE * 2 - square_distance(move->to, kingSquare)) * 10;
+        if (move->captured != NO_KOMA)
+            score += 10000 + piece_order_value(move->captured);
+        if (move->kind == MOVE_PROMOTE)
+            score += 1500 + piece_order_value(tsume_promote(move->piece)) - piece_order_value(move->piece);
+        if (move->kind == MOVE_DROP)
+            score += 700 + piece_order_value(move->piece);
+    } else {
+        if (move->from == kingSquare)
+            score += 8000;
+        if (move->captured != NO_KOMA)
+            score += 5000 + piece_order_value(move->captured);
+        if (move->kind == MOVE_PROMOTE)
+            score += 300;
+        if (move->kind == MOVE_DROP)
+            score -= 200;
+    }
+    return score;
+}
+
+static void order_moves(const Board* board, Teban side, MoveList* moves, MoveOrderMode mode)
+{
+    int scores[MAX_MOVES];
+    int kingSquare = mode == MOVE_ORDER_ATTACKER ? find_side_king(board, tsume_opponent(side)) : find_side_king(board, side);
+    for (int i = 0; i < moves->count; i++)
+        scores[i] = move_order_score(&moves->moves[i], kingSquare, mode);
+
+    for (int i = 1; i < moves->count; i++) {
+        Move move = moves->moves[i];
+        int score = scores[i];
+        int j = i - 1;
+        while (j >= 0 && scores[j] < score) {
+            moves->moves[j + 1] = moves->moves[j];
+            scores[j + 1] = scores[j];
+            j--;
+        }
+        moves->moves[j + 1] = move;
+        scores[j + 1] = score;
+    }
+}
+
 static DfpnEntry* table_lookup(DfpnContext* context, uint64_t key)
 {
     DfpnEntry* entry = &context->entries[key % DFPN_TABLE_SIZE];
     return (entry->used && entry->key == key) ? entry : NULL;
 }
 
-static void table_store(DfpnContext* context, uint64_t key, int remainingPly, int proof, int disproof)
+static DfpnEntry* table_entry_for_store(DfpnContext* context, uint64_t key)
 {
     DfpnEntry* entry = &context->entries[key % DFPN_TABLE_SIZE];
-    entry->key = key;
-    entry->remainingPly = remainingPly;
-    entry->proof = proof;
-    entry->disproof = disproof;
-    entry->used = true;
+    if (!entry->used || entry->key != key) {
+        memset(entry, 0, sizeof(*entry));
+        entry->key = key;
+        entry->used = true;
+    }
+    return entry;
+}
+
+static void table_store_proven(DfpnContext* context, uint64_t key, const TsumeLine* line)
+{
+    DfpnEntry* entry = table_entry_for_store(context, key);
+    if (entry->hasProven && entry->provenPly <= line->count)
+        return;
+    entry->hasProven = true;
+    entry->provenPly = line->count;
+    entry->hasBestMove = line->count > 0;
+    if (entry->hasBestMove)
+        entry->bestMove = line->moves[0];
+}
+
+static void table_store_disproven(DfpnContext* context, uint64_t key, int remainingPly)
+{
+    DfpnEntry* entry = table_entry_for_store(context, key);
+    if (!entry->hasDisproven || remainingPly > entry->disprovenPly) {
+        entry->hasDisproven = true;
+        entry->disprovenPly = remainingPly;
+    }
+}
+
+static uint64_t table_position_key(const Board* board, Teban side)
+{
+    return tsume_position_hash(board, side, 0);
+}
+
+static bool rebuild_cached_line(DfpnContext* context, const Board* board, Teban side, int remainingPly, TsumeLine* line)
+{
+    Board current = *board;
+    Teban currentSide = side;
+    int currentRemainingPly = remainingPly;
+    line->count = 0;
+
+    while (currentRemainingPly >= 0) {
+        DfpnEntry* entry = table_lookup(context, table_position_key(&current, currentSide));
+        if (!entry || !entry->hasProven || entry->provenPly > currentRemainingPly)
+            return false;
+        if (entry->provenPly == 0)
+            return true;
+        if (!entry->hasBestMove || line->count >= MAX_SOLUTION_MOVES)
+            return false;
+
+        Move move = entry->bestMove;
+        line->moves[line->count++] = move;
+        tsume_apply_move(&current, &move);
+        currentSide = tsume_opponent(currentSide);
+        currentRemainingPly--;
+    }
+
+    return false;
 }
 
 static DfpnState dfpn_search(DfpnContext* context, const Board* board, Teban side, int remainingPly, TsumeLine* line);
@@ -47,10 +207,8 @@ static DfpnState solve_attacker_node(DfpnContext* context, const Board* board, i
     ArenaMark mark = arena_mark(context->arena);
     MoveList* checkingMoves = (MoveList*)arena_alloc_zero(context->arena, sizeof(*checkingMoves));
     MoveList* checkingScratch = (MoveList*)arena_alloc_zero(context->arena, sizeof(*checkingScratch));
-    MoveList* defenderMoves = (MoveList*)arena_alloc_zero(context->arena, sizeof(*defenderMoves));
-    MoveList* defenderScratch = (MoveList*)arena_alloc_zero(context->arena, sizeof(*defenderScratch));
     TsumeLine* childLine = (TsumeLine*)arena_alloc_zero(context->arena, sizeof(*childLine));
-    if (!checkingMoves || !checkingScratch || !defenderMoves || !defenderScratch || !childLine) {
+    if (!checkingMoves || !checkingScratch || !childLine) {
         arena_rewind(context->arena, mark);
         return DFPN_DISPROVEN;
     }
@@ -60,21 +218,12 @@ static DfpnState solve_attacker_node(DfpnContext* context, const Board* board, i
         arena_rewind(context->arena, mark);
         return DFPN_DISPROVEN;
     }
+    order_moves(board, SENTE, checkingMoves, MOVE_ORDER_ATTACKER);
 
     for (int i = 0; i < checkingMoves->count; i++) {
         Board next = *board;
         Move move = checkingMoves->moves[i];
         tsume_apply_move(&next, &move);
-
-        defenderMoves->count = 0;
-        defenderScratch->count = 0;
-        tsume_generate_legal_moves_with_scratch(&next, GOTE, false, defenderMoves, defenderScratch);
-        if (defenderMoves->count == 0) {
-            line->count = 1;
-            line->moves[0] = move;
-            arena_rewind(context->arena, mark);
-            return DFPN_PROVEN;
-        }
 
         childLine->count = 0;
         DfpnState childState = dfpn_search(context, &next, GOTE, remainingPly - 1, childLine);
@@ -109,6 +258,7 @@ static DfpnState solve_defender_node(DfpnContext* context, const Board* board, i
         arena_rewind(context->arena, mark);
         return DFPN_PROVEN;
     }
+    order_moves(board, GOTE, defenderMoves, MOVE_ORDER_DEFENDER);
 
     for (int i = 0; i < defenderMoves->count; i++) {
         Board next = *board;
@@ -142,12 +292,12 @@ static DfpnState dfpn_search(DfpnContext* context, const Board* board, Teban sid
     if (remainingPly < 0)
         return DFPN_DISPROVEN;
 
-    uint64_t key = tsume_position_hash(board, side, remainingPly);
+    uint64_t key = table_position_key(board, side);
     DfpnEntry* cached = table_lookup(context, key);
-    if (cached && cached->remainingPly >= remainingPly) {
-        if (cached->proof == 0)
+    if (cached) {
+        if (cached->hasProven && cached->provenPly <= remainingPly && rebuild_cached_line(context, board, side, remainingPly, line))
             return DFPN_PROVEN;
-        if (cached->disproof == 0)
+        if (cached->hasDisproven && remainingPly <= cached->disprovenPly)
             return DFPN_DISPROVEN;
     }
 
@@ -155,7 +305,10 @@ static DfpnState dfpn_search(DfpnContext* context, const Board* board, Teban sid
         ? solve_attacker_node(context, board, remainingPly, line)
         : solve_defender_node(context, board, remainingPly, line);
 
-    table_store(context, key, remainingPly, state == DFPN_PROVEN ? 0 : 1, state == DFPN_DISPROVEN ? 0 : 1);
+    if (state == DFPN_PROVEN)
+        table_store_proven(context, key, line);
+    else
+        table_store_disproven(context, key, remainingPly);
     return state;
 }
 
@@ -174,7 +327,7 @@ TsumeSolveResult tsume_solve_dfpn(const Board* board, int maxPly, TsumeLine* lin
     }
 
     MemoryArena arena;
-    if (!arena_init(&arena, 2 * 1024 * 1024)) {
+    if (!arena_init(&arena, 1024 * 1024)) {
         result.status = TSUME_TIMEOUT;
         snprintf(result.message, sizeof(result.message), "could not allocate solver arena");
         return result;

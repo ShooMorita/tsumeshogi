@@ -188,7 +188,41 @@ static void generate_piece_moves(const Board* board, Teban side, int from, MoveL
     }
 }
 
-static void generate_drop_moves(const Board* board, Teban side, MoveList* list)
+static bool dropped_piece_attacks_square(const Board* board, Koma piece, Teban side, int from, int target)
+{
+    if (target < 0)
+        return false;
+
+    int forward = side == SENTE ? -1 : 1;
+    int fromRow = tsume_square_row(from);
+    int fromCol = tsume_square_col(from);
+    int targetRow = tsume_square_row(target);
+    int targetCol = tsume_square_col(target);
+    int dr = targetRow - fromRow;
+    int dc = targetCol - fromCol;
+
+    if (piece == FU)
+        return dr == forward && dc == 0;
+    if (piece == KYO)
+        return dc == 0 && dr * forward > 0 && path_is_clear(board, fromRow, fromCol, targetRow, targetCol, forward, 0);
+    if (piece == KEI)
+        return dr == forward * 2 && (dc == -1 || dc == 1);
+    if (piece == GIN)
+        return (dr == forward && (dc == -1 || dc == 0 || dc == 1)) || (dr == -forward && (dc == -1 || dc == 1));
+    if (piece == KIN)
+        return (dr == forward && (dc == -1 || dc == 0 || dc == 1)) || (dr == 0 && (dc == -1 || dc == 1)) || (dr == -forward && dc == 0);
+    if (piece == KAKU)
+        return abs(dr) == abs(dc) && dr != 0 && path_is_clear(board, fromRow, fromCol, targetRow, targetCol, dr > 0 ? 1 : -1, dc > 0 ? 1 : -1);
+    if (piece == HISHA) {
+        if (dr == 0 && dc != 0)
+            return path_is_clear(board, fromRow, fromCol, targetRow, targetCol, 0, dc > 0 ? 1 : -1);
+        if (dc == 0 && dr != 0)
+            return path_is_clear(board, fromRow, fromCol, targetRow, targetCol, dr > 0 ? 1 : -1, 0);
+    }
+    return false;
+}
+
+static void generate_drop_moves(const Board* board, Teban side, bool onlyCheckingDrops, int targetSquare, MoveList* list)
 {
     for (Koma piece = FU; piece < MOCHIGOMA_LIMIT; piece++) {
         if (board->mochigoma[side][piece] == 0)
@@ -201,6 +235,8 @@ static void generate_drop_moves(const Board* board, Teban side, MoveList* list)
             if (!can_drop_on_row(side, piece, row))
                 continue;
             if (piece == FU && file_has_unpromoted_pawn(board, side, col))
+                continue;
+            if (onlyCheckingDrops && !dropped_piece_attacks_square(board, piece, side, square, targetSquare))
                 continue;
             Move move = {
                 .piece = piece,
@@ -309,7 +345,8 @@ void tsume_generate_legal_moves_with_scratch(const Board* board, Teban side, boo
         if (board->squares[square] != NO_KOMA && tsume_board_square_side(board, square) == side)
             generate_piece_moves(board, side, square, pseudoMoves);
     }
-    generate_drop_moves(board, side, pseudoMoves);
+    int targetKing = onlyCheckingMoves ? find_king(board, tsume_opponent(side)) : -1;
+    generate_drop_moves(board, side, onlyCheckingMoves, targetKing, pseudoMoves);
 
     moves->count = 0;
     for (int i = 0; i < pseudoMoves->count; i++) {
