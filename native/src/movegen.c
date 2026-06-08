@@ -277,19 +277,6 @@ Board tsume_board_after_move(const Board* board, const Move* move)
     return next;
 }
 
-void tsume_apply_move(Board* board, const Move* move)
-{
-    Koma placedPiece = move->kind == MOVE_PROMOTE ? tsume_promote(move->piece) : move->piece;
-    if (move->kind == MOVE_DROP) {
-        board->mochigoma[move->side][move->piece]--;
-    } else {
-        if (move->captured != NO_KOMA)
-            board->mochigoma[move->side][tsume_unpromote(move->captured)]++;
-        put_piece_on_board(board, move->from, NO_KOMA, SENTE);
-    }
-    put_piece_on_board(board, move->to, placedPiece, move->side);
-}
-
 static int find_king(const Board* board, Teban side)
 {
     for (int square = 0; square < BOARD_SQUARE_COUNT; square++) {

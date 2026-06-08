@@ -2,11 +2,10 @@
 
 int main(void)
 {
-    tsume_init();
-    Board board;
-    TsumeParseResult result = tsume_parse_board_text(SAMPLE_INPUT, &board);
+    TsumeParseBoardResult result = tsume_parse_board_text_value(SAMPLE_INPUT);
     ASSERT_EQ_INT(TSUME_OK, result.status);
 
+    Board board = result.board;
     ASSERT_EQ_INT(NO_KOMA, board.squares[tsume_square_index(0, 0)]);
     ASSERT_EQ_INT(GYOKU, board.squares[tsume_square_index(0, 4)]);
     ASSERT_TRUE(tsume_board_is_gote_square(&board, tsume_square_index(0, 4)));
@@ -16,11 +15,6 @@ int main(void)
     ASSERT_TRUE(!tsume_board_is_gote_square(&board, tsume_square_index(8, 4)));
     ASSERT_EQ_INT(1, board.mochigoma[SENTE][KIN]);
     ASSERT_EQ_INT(0, board.mochigoma[GOTE][FU]);
-
-    TsumeParseBoardResult valueResult = tsume_parse_board_text_value(SAMPLE_INPUT);
-    ASSERT_EQ_INT(TSUME_OK, valueResult.status);
-    ASSERT_EQ_INT(GYOKU, valueResult.board.squares[tsume_square_index(0, 4)]);
-    ASSERT_EQ_INT(1, valueResult.board.mochigoma[SENTE][KIN]);
 
     printf("parser_test passed\n");
     return 0;

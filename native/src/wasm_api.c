@@ -142,7 +142,6 @@ static void append_frames_json(char* buffer, size_t bufferSize, size_t* offset, 
 
 char* tsume_solve_json(const char* input, int maxPly)
 {
-    tsume_init();
     TsumeParseBoardResult parseResult = tsume_parse_board_text_value(input);
     if (parseResult.status != TSUME_OK) {
         char error[512];

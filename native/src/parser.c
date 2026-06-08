@@ -3,6 +3,11 @@
 #include <stdio.h>
 #include <string.h>
 
+typedef struct {
+    TsumeStatus status;
+    char message[128];
+} ParseResult;
+
 static int utf8_byte_len(unsigned char firstByte)
 {
     if ((firstByte & 0x80) == 0x00)
@@ -224,9 +229,9 @@ static bool line_contains(const char* line, size_t lineLen, const char* needle)
     return false;
 }
 
-static TsumeParseResult parse_board_text_into(const char* input, Board* board)
+static ParseResult parse_board_text_into(const char* input, Board* board)
 {
-    TsumeParseResult result = { TSUME_OK, "" };
+    ParseResult result = { TSUME_OK, "" };
     tsume_board_init(board);
     if (!input) {
         result.status = TSUME_PARSE_ERROR;
@@ -260,20 +265,8 @@ static TsumeParseResult parse_board_text_into(const char* input, Board* board)
 TsumeParseBoardResult tsume_parse_board_text_value(const char* input)
 {
     TsumeParseBoardResult result = { TSUME_OK, "", { 0 } };
-    TsumeParseResult parsed = parse_board_text_into(input, &result.board);
+    ParseResult parsed = parse_board_text_into(input, &result.board);
     result.status = parsed.status;
     snprintf(result.message, sizeof(result.message), "%s", parsed.message);
     return result;
-}
-
-TsumeParseResult tsume_parse_board_text(const char* input, Board* board)
-{
-    TsumeParseResult result = { TSUME_OK, "" };
-    if (!input || !board) {
-        result.status = TSUME_PARSE_ERROR;
-        snprintf(result.message, sizeof(result.message), "input and board are required");
-        return result;
-    }
-
-    return parse_board_text_into(input, board);
 }

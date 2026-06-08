@@ -12,10 +12,6 @@ static const char* KOMA_CODES[KOMA_KIND_COUNT] = {
     "OU", "TO", "NARIKYO", "NARIKEI", "NARIGIN", "UMA", "RYU"
 };
 
-void tsume_init(void)
-{
-}
-
 const char* tsume_koma_name(Koma koma)
 {
     return (koma >= 0 && koma < KOMA_KIND_COUNT) ? KOMA_NAMES[koma] : "";
@@ -89,27 +85,6 @@ static void put_piece(Board* board, int square, Koma koma, Teban side)
         clear_gote_square(board, square);
 }
 
-Board tsume_empty_board(void)
-{
-    Board board;
-    init_board(&board);
-    return board;
-}
-
-Board tsume_board_with_piece(const Board* board, int square, Koma koma, Teban side)
-{
-    Board next = *board;
-    put_piece(&next, square, koma, side);
-    return next;
-}
-
-Board tsume_board_without_piece(const Board* board, int square)
-{
-    Board next = *board;
-    put_piece(&next, square, NO_KOMA, SENTE);
-    return next;
-}
-
 void tsume_board_init(Board* board)
 {
     init_board(board);
@@ -118,11 +93,6 @@ void tsume_board_init(Board* board)
 void tsume_board_set_piece(Board* board, int square, Koma koma, Teban side)
 {
     put_piece(board, square, koma, side);
-}
-
-void tsume_board_clear_square(Board* board, int square)
-{
-    put_piece(board, square, NO_KOMA, SENTE);
 }
 
 Koma tsume_promote(Koma koma)
