@@ -24,12 +24,28 @@ const char* tsume_koma_code(Koma koma)
 
 const char* tsume_teban_name(Teban side)
 {
-    return side == GOTE ? "gote" : "sente";
+    switch (side) {
+    case SENTE:
+        return "sente";
+    case GOTE:
+        return "gote";
+    case TEBAN_COUNT:
+        break;
+    }
+    return "";
 }
 
 Teban tsume_opponent(Teban side)
 {
-    return side == SENTE ? GOTE : SENTE;
+    switch (side) {
+    case SENTE:
+        return GOTE;
+    case GOTE:
+        return SENTE;
+    case TEBAN_COUNT:
+        break;
+    }
+    return TEBAN_COUNT;
 }
 
 int tsume_square_index(int row, int col)
@@ -77,12 +93,22 @@ static void init_board(Board* board)
 static void put_piece(Board* board, int square, Koma koma, Teban side)
 {
     board->squares[square] = koma;
-    if (koma == NO_KOMA)
+    if (koma == NO_KOMA) {
         clear_gote_square(board, square);
-    else if (side == GOTE)
+        return;
+    }
+
+    switch (side) {
+    case SENTE:
+        clear_gote_square(board, square);
+        break;
+    case GOTE:
         set_gote_square(board, square);
-    else
+        break;
+    case TEBAN_COUNT:
         clear_gote_square(board, square);
+        break;
+    }
 }
 
 void tsume_board_init(Board* board)
@@ -110,9 +136,19 @@ Koma tsume_promote(Koma koma)
         return UMA;
     case HISHA:
         return RYU;
-    default:
+    case KIN:
+    case GYOKU:
+    case OU:
+    case TO:
+    case NARIKYO:
+    case NARIKEI:
+    case NARIGIN:
+    case UMA:
+    case RYU:
+    case NO_KOMA:
         return koma;
     }
+    return koma;
 }
 
 Koma tsume_unpromote(Koma koma)
@@ -130,14 +166,44 @@ Koma tsume_unpromote(Koma koma)
         return KAKU;
     case RYU:
         return HISHA;
-    default:
+    case FU:
+    case KYO:
+    case KEI:
+    case GIN:
+    case KIN:
+    case KAKU:
+    case HISHA:
+    case GYOKU:
+    case OU:
+    case NO_KOMA:
         return koma;
     }
+    return koma;
 }
 
 bool tsume_can_promote(Koma koma)
 {
-    return koma == FU || koma == KYO || koma == KEI || koma == GIN || koma == KAKU || koma == HISHA;
+    switch (koma) {
+    case FU:
+    case KYO:
+    case KEI:
+    case GIN:
+    case KAKU:
+    case HISHA:
+        return true;
+    case KIN:
+    case GYOKU:
+    case OU:
+    case TO:
+    case NARIKYO:
+    case NARIKEI:
+    case NARIGIN:
+    case UMA:
+    case RYU:
+    case NO_KOMA:
+        return false;
+    }
+    return false;
 }
 
 static uint64_t hash_mix(uint64_t hash, uint64_t value)

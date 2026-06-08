@@ -100,23 +100,35 @@ static const char* move_kind_code(MoveKind kind)
 
 static void append_move_json(char* buffer, size_t bufferSize, size_t* offset, const Move* move)
 {
+    const char* dropSuffix = "";
+    const char* promoteSuffix = "";
     append_format(buffer, bufferSize, offset,
         "{\"piece\":\"%s\",\"side\":\"%s\",\"kind\":\"%s\",\"from\":",
         tsume_koma_code(move->piece),
         tsume_teban_name(move->side),
         move_kind_code(move->kind));
-    if (move->kind == MOVE_DROP) {
-        append_text(buffer, bufferSize, offset, "null");
-    } else {
+
+    switch (move->kind) {
+    case MOVE_NORMAL:
         append_format(buffer, bufferSize, offset, "{\"row\":%d,\"col\":%d}", tsume_square_row(move->from), tsume_square_col(move->from));
+        break;
+    case MOVE_PROMOTE:
+        append_format(buffer, bufferSize, offset, "{\"row\":%d,\"col\":%d}", tsume_square_row(move->from), tsume_square_col(move->from));
+        promoteSuffix = "成";
+        break;
+    case MOVE_DROP:
+        append_text(buffer, bufferSize, offset, "null");
+        dropSuffix = "打";
+        break;
     }
+
     append_format(buffer, bufferSize, offset,
         ",\"to\":{\"row\":%d,\"col\":%d},\"display\":\"%s%s%s\"}",
         tsume_square_row(move->to),
         tsume_square_col(move->to),
         tsume_koma_name(move->piece),
-        move->kind == MOVE_DROP ? "打" : "",
-        move->kind == MOVE_PROMOTE ? "成" : "");
+        dropSuffix,
+        promoteSuffix);
 }
 
 static void append_frames_json(char* buffer, size_t bufferSize, size_t* offset, const Board* initialBoard, const TsumeLine* line)

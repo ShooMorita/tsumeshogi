@@ -64,17 +64,38 @@ static int piece_order_value(Koma piece)
     case GYOKU:
     case OU:
         return 2000;
-    default:
+    case NO_KOMA:
         return 0;
     }
+    return 0;
 }
 
 static int find_side_king(const Board* board, Teban side)
 {
     for (int square = 0; square < BOARD_SQUARE_COUNT; square++) {
         Koma piece = board->squares[square];
-        if ((piece == GYOKU || piece == OU) && tsume_board_square_side(board, square) == side)
-            return square;
+        switch (piece) {
+        case GYOKU:
+        case OU:
+            if (tsume_board_square_side(board, square) == side)
+                return square;
+            break;
+        case FU:
+        case KYO:
+        case KEI:
+        case GIN:
+        case KIN:
+        case KAKU:
+        case HISHA:
+        case TO:
+        case NARIKYO:
+        case NARIKEI:
+        case NARIGIN:
+        case UMA:
+        case RYU:
+        case NO_KOMA:
+            break;
+        }
     }
     return -1;
 }
@@ -89,23 +110,38 @@ static int square_distance(int from, int to)
 static int move_order_score(const Move* move, int kingSquare, MoveOrderMode mode)
 {
     int score = 0;
-    if (mode == MOVE_ORDER_ATTACKER) {
+    switch (mode) {
+    case MOVE_ORDER_ATTACKER:
         score += (BOARD_SIZE * 2 - square_distance(move->to, kingSquare)) * 10;
         if (move->captured != NO_KOMA)
             score += 10000 + piece_order_value(move->captured);
-        if (move->kind == MOVE_PROMOTE)
+        switch (move->kind) {
+        case MOVE_NORMAL:
+            break;
+        case MOVE_PROMOTE:
             score += 1500 + piece_order_value(tsume_promote(move->piece)) - piece_order_value(move->piece);
-        if (move->kind == MOVE_DROP)
+            break;
+        case MOVE_DROP:
             score += 700 + piece_order_value(move->piece);
-    } else {
+            break;
+        }
+        break;
+    case MOVE_ORDER_DEFENDER:
         if (move->from == kingSquare)
             score += 8000;
         if (move->captured != NO_KOMA)
             score += 5000 + piece_order_value(move->captured);
-        if (move->kind == MOVE_PROMOTE)
+        switch (move->kind) {
+        case MOVE_NORMAL:
+            break;
+        case MOVE_PROMOTE:
             score += 300;
-        if (move->kind == MOVE_DROP)
+            break;
+        case MOVE_DROP:
             score -= 200;
+            break;
+        }
+        break;
     }
     return score;
 }
@@ -113,7 +149,15 @@ static int move_order_score(const Move* move, int kingSquare, MoveOrderMode mode
 static void order_moves(const Board* board, Teban side, MoveList* moves, MoveOrderMode mode)
 {
     int scores[MAX_MOVES];
-    int kingSquare = mode == MOVE_ORDER_ATTACKER ? find_side_king(board, tsume_opponent(side)) : find_side_king(board, side);
+    int kingSquare = -1;
+    switch (mode) {
+    case MOVE_ORDER_ATTACKER:
+        kingSquare = find_side_king(board, tsume_opponent(side));
+        break;
+    case MOVE_ORDER_DEFENDER:
+        kingSquare = find_side_king(board, side);
+        break;
+    }
     for (int i = 0; i < moves->count; i++)
         scores[i] = move_order_score(&moves->moves[i], kingSquare, mode);
 
@@ -299,14 +343,27 @@ static DfpnState dfpn_search(DfpnContext* context, const Board* board, Teban sid
             return DFPN_DISPROVEN;
     }
 
-    DfpnState state = side == SENTE
-        ? solve_attacker_node(context, board, remainingPly, line)
-        : solve_defender_node(context, board, remainingPly, line);
+    DfpnState state = DFPN_DISPROVEN;
+    switch (side) {
+    case SENTE:
+        state = solve_attacker_node(context, board, remainingPly, line);
+        break;
+    case GOTE:
+        state = solve_defender_node(context, board, remainingPly, line);
+        break;
+    case TEBAN_COUNT:
+        break;
+    }
 
-    if (state == DFPN_PROVEN)
+    switch (state) {
+    case DFPN_PROVEN:
         table_store_proven(context, key, line);
-    else
+        break;
+    case DFPN_UNKNOWN:
+    case DFPN_DISPROVEN:
         table_store_disproven(context, key, remainingPly);
+        break;
+    }
     return state;
 }
 
@@ -344,12 +401,16 @@ TsumeSolveResult tsume_solve_dfpn(const Board* board, int maxPly, TsumeLine* lin
     DfpnState state = dfpn_search(context, board, SENTE, maxPly, line);
     result.nodes = context->nodes;
     arena_destroy(&arena);
-    if (state == DFPN_PROVEN) {
+    switch (state) {
+    case DFPN_PROVEN:
         result.status = TSUME_OK;
         snprintf(result.message, sizeof(result.message), "mate found");
-    } else {
+        break;
+    case DFPN_UNKNOWN:
+    case DFPN_DISPROVEN:
         result.status = TSUME_NO_MATE;
         snprintf(result.message, sizeof(result.message), "no mate found within %d ply", maxPly);
+        break;
     }
     return result;
 }
