@@ -57,6 +57,13 @@ static char* duplicate_json(const char* text)
     return out;
 }
 
+static char* error_json(TsumeStatus status, const char* message)
+{
+    char error[512];
+    snprintf(error, sizeof(error), "{\"ok\":false,\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}", status_code(status), message);
+    return duplicate_json(error);
+}
+
 static void append_board_value_json(char* buffer, size_t bufferSize, size_t* offset, const Board* board)
 {
     append_text(buffer, bufferSize, offset, "{\"squares\":[");
@@ -98,6 +105,45 @@ static const char* move_kind_code(MoveKind kind)
     return "normal";
 }
 
+static const char* file_label_from_col(int col)
+{
+    static const char* labels[BOARD_SIZE] = { "９", "８", "７", "６", "５", "４", "３", "２", "１" };
+    return (0 <= col && col < BOARD_SIZE) ? labels[col] : "";
+}
+
+static const char* rank_label_from_row(int row)
+{
+    static const char* labels[BOARD_SIZE] = { "一", "二", "三", "四", "五", "六", "七", "八", "九" };
+    return (0 <= row && row < BOARD_SIZE) ? labels[row] : "";
+}
+
+static const char* move_piece_label(Koma piece)
+{
+    switch (piece) {
+    case NARIKYO:
+        return "成香";
+    case NARIKEI:
+        return "成桂";
+    case NARIGIN:
+        return "成銀";
+    case FU:
+    case KYO:
+    case KEI:
+    case GIN:
+    case KIN:
+    case KAKU:
+    case HISHA:
+    case GYOKU:
+    case OU:
+    case TO:
+    case UMA:
+    case RYU:
+    case NO_KOMA:
+        return tsume_koma_name(piece);
+    }
+    return tsume_koma_name(piece);
+}
+
 static void append_move_json(char* buffer, size_t bufferSize, size_t* offset, const Move* move)
 {
     const char* dropSuffix = "";
@@ -123,21 +169,23 @@ static void append_move_json(char* buffer, size_t bufferSize, size_t* offset, co
     }
 
     append_format(buffer, bufferSize, offset,
-        ",\"to\":{\"row\":%d,\"col\":%d},\"display\":\"%s%s%s\"}",
+        ",\"to\":{\"row\":%d,\"col\":%d},\"display\":\"%s%s%s%s%s\"}",
         tsume_square_row(move->to),
         tsume_square_col(move->to),
-        tsume_koma_name(move->piece),
+        file_label_from_col(tsume_square_col(move->to)),
+        rank_label_from_row(tsume_square_row(move->to)),
+        move_piece_label(move->piece),
         dropSuffix,
         promoteSuffix);
 }
 
-static void append_frames_json(char* buffer, size_t bufferSize, size_t* offset, const Board* initialBoard, const TsumeLine* line)
+static void append_move_frames_json(char* buffer, size_t bufferSize, size_t* offset, const Board* initialBoard, const Move* moves, int moveCount)
 {
     Board currentBoard = *initialBoard;
 
     append_text(buffer, bufferSize, offset, "\"frames\":[");
-    for (int i = 0; i < line->count; i++) {
-        Move move = line->moves[i];
+    for (int i = 0; i < moveCount; i++) {
+        Move move = moves[i];
         currentBoard = tsume_board_after_move(&currentBoard, &move);
 
         if (i > 0)
@@ -152,20 +200,58 @@ static void append_frames_json(char* buffer, size_t bufferSize, size_t* offset, 
     append_text(buffer, bufferSize, offset, "]");
 }
 
-char* tsume_solve_json(const char* input, int maxPly)
+static void append_frames_json(char* buffer, size_t bufferSize, size_t* offset, const Board* initialBoard, const TsumeLine* line)
 {
-    TsumeParseBoardResult parseResult = tsume_parse_board_text_value(input);
-    if (parseResult.status != TSUME_OK) {
-        char error[512];
-        snprintf(error, sizeof(error), "{\"ok\":false,\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}", status_code(parseResult.status), parseResult.message);
-        return duplicate_json(error);
+    append_move_frames_json(buffer, bufferSize, offset, initialBoard, line->moves, line->count);
+}
+
+static Board board_after_replay_ply(const TsumeParseGameResult* game, int replayPly)
+{
+    Board board = game->initialBoard;
+    for (int i = 0; i < replayPly; i++)
+        board = tsume_board_after_move(&board, &game->moves[i]);
+    return board;
+}
+
+char* tsume_replay_json(const char* input)
+{
+    TsumeParseGameResult parseResult = tsume_parse_game_text_value(input);
+    if (parseResult.status != TSUME_OK)
+        return error_json(parseResult.status, parseResult.message);
+
+    size_t bufferSize = 65536 + (size_t)parseResult.moveCount * 8192;
+    char* buffer = (char*)malloc(bufferSize);
+    if (!buffer)
+        return NULL;
+
+    size_t offset = 0;
+    append_text(buffer, bufferSize, &offset, "{\"ok\":true,");
+    append_board_json(buffer, bufferSize, &offset, &parseResult.initialBoard);
+    append_text(buffer, bufferSize, &offset, ",\"replay\":{\"moveCount\":");
+    append_format(buffer, bufferSize, &offset, "%d,\"moves\":[", parseResult.moveCount);
+    for (int i = 0; i < parseResult.moveCount; i++) {
+        if (i > 0)
+            append_text(buffer, bufferSize, &offset, ",");
+        append_move_json(buffer, bufferSize, &offset, &parseResult.moves[i]);
     }
-    Board board = parseResult.board;
+    append_text(buffer, bufferSize, &offset, "]},");
+    append_move_frames_json(buffer, bufferSize, &offset, &parseResult.initialBoard, parseResult.moves, parseResult.moveCount);
+    append_text(buffer, bufferSize, &offset, "}");
+    buffer[bufferSize - 1] = '\0';
+    return buffer;
+}
+
+static char* solve_parsed_game_at_json(const TsumeParseGameResult* parseResult, int maxPly, int replayPly)
+{
+    if (replayPly < 0 || replayPly > parseResult->moveCount)
+        return error_json(TSUME_PARSE_ERROR, "replay ply is out of range");
+
+    Board board = board_after_replay_ply(parseResult, replayPly);
 
     TsumeLine line = { 0 };
     TsumeSolveResult solveResult = tsume_solve_dfpn(&board, maxPly, &line);
 
-    size_t bufferSize = 65536;
+    size_t bufferSize = 65536 + (size_t)line.count * 8192;
     char* buffer = (char*)malloc(bufferSize);
     if (!buffer)
         return NULL;
@@ -184,11 +270,30 @@ char* tsume_solve_json(const char* input, int maxPly)
     }
     append_text(buffer, bufferSize, &offset, "]},");
     append_board_json(buffer, bufferSize, &offset, &board);
+    append_format(buffer, bufferSize, &offset, ",\"replayPly\":%d", replayPly);
     append_text(buffer, bufferSize, &offset, ",");
     append_frames_json(buffer, bufferSize, &offset, &board, &line);
     append_text(buffer, bufferSize, &offset, "}");
     buffer[bufferSize - 1] = '\0';
     return buffer;
+}
+
+char* tsume_solve_at_json(const char* input, int maxPly, int replayPly)
+{
+    TsumeParseGameResult parseResult = tsume_parse_game_text_value(input);
+    if (parseResult.status != TSUME_OK)
+        return error_json(parseResult.status, parseResult.message);
+
+    return solve_parsed_game_at_json(&parseResult, maxPly, replayPly);
+}
+
+char* tsume_solve_json(const char* input, int maxPly)
+{
+    TsumeParseGameResult parseResult = tsume_parse_game_text_value(input);
+    if (parseResult.status != TSUME_OK)
+        return error_json(parseResult.status, parseResult.message);
+
+    return solve_parsed_game_at_json(&parseResult, maxPly, parseResult.moveCount);
 }
 
 void tsume_free(char* ptr)

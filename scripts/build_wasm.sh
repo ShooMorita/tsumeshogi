@@ -21,6 +21,6 @@ emcc \
   -sENVIRONMENT=web \
   -sSTACK_SIZE=8388608 \
   -sALLOW_MEMORY_GROWTH=1 \
-  -sEXPORTED_FUNCTIONS='["_tsume_solve_json","_tsume_free","_malloc","_free"]' \
+  -sEXPORTED_FUNCTIONS='["_tsume_solve_json","_tsume_solve_at_json","_tsume_replay_json","_tsume_free","_malloc","_free"]' \
   -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8"]' \
   -o "$out_dir/tsume_shogi.js"

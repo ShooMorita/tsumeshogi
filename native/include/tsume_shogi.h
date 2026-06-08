@@ -9,6 +9,7 @@
 #define BITS_PER_WORD 64
 #define MAX_MOVES 768
 #define MAX_SOLUTION_MOVES 128
+#define MAX_KIFU_MOVES 512
 #define DFPN_TABLE_SIZE 65536
 
 typedef struct {
@@ -82,6 +83,14 @@ typedef struct {
 } Move;
 
 typedef struct {
+    TsumeStatus status;
+    char message[128];
+    Board initialBoard;
+    Move moves[MAX_KIFU_MOVES];
+    int moveCount;
+} TsumeParseGameResult;
+
+typedef struct {
     Move moves[MAX_MOVES];
     int count;
 } MoveList;
@@ -117,6 +126,7 @@ Koma tsume_unpromote(Koma koma);
 bool tsume_can_promote(Koma koma);
 
 TsumeParseBoardResult tsume_parse_board_text_value(const char* input);
+TsumeParseGameResult tsume_parse_game_text_value(const char* input);
 
 bool tsume_is_in_check(const Board* board, Teban side);
 void tsume_generate_legal_moves(const Board* board, Teban side, bool onlyCheckingMoves, MoveList* moves);

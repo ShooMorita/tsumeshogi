@@ -81,7 +81,36 @@ button {
 
 button:disabled {
   opacity: 0.55;
-  cursor: wait;
+  cursor: not-allowed;
+}
+
+.segment-control {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(64px, 1fr));
+  height: 40px;
+  border: 1px solid #111111;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.segment-button {
+  height: 100%;
+  min-width: 64px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  color: #111111;
+}
+
+.segment-button + .segment-button {
+  border-left: 1px solid #111111;
+}
+
+.segment-button.is-active {
+  background: #111111;
+  color: #ffffff;
 }
 
 output {
