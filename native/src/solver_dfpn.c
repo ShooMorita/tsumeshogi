@@ -192,7 +192,7 @@ static bool rebuild_cached_line(DfpnContext* context, const Board* board, Teban 
 
         Move move = entry->bestMove;
         line->moves[line->count++] = move;
-        tsume_apply_move(&current, &move);
+        current = tsume_board_after_move(&current, &move);
         currentSide = tsume_opponent(currentSide);
         currentRemainingPly--;
     }
@@ -221,9 +221,8 @@ static DfpnState solve_attacker_node(DfpnContext* context, const Board* board, i
     order_moves(board, SENTE, checkingMoves, MOVE_ORDER_ATTACKER);
 
     for (int i = 0; i < checkingMoves->count; i++) {
-        Board next = *board;
         Move move = checkingMoves->moves[i];
-        tsume_apply_move(&next, &move);
+        Board next = tsume_board_after_move(board, &move);
 
         childLine->count = 0;
         DfpnState childState = dfpn_search(context, &next, GOTE, remainingPly - 1, childLine);
@@ -261,9 +260,8 @@ static DfpnState solve_defender_node(DfpnContext* context, const Board* board, i
     order_moves(board, GOTE, defenderMoves, MOVE_ORDER_DEFENDER);
 
     for (int i = 0; i < defenderMoves->count; i++) {
-        Board next = *board;
         Move move = defenderMoves->moves[i];
-        tsume_apply_move(&next, &move);
+        Board next = tsume_board_after_move(board, &move);
 
         childLine->count = 0;
         DfpnState childState = dfpn_search(context, &next, SENTE, remainingPly - 1, childLine);

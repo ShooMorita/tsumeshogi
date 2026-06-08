@@ -251,6 +251,32 @@ static void generate_drop_moves(const Board* board, Teban side, bool onlyCheckin
     }
 }
 
+static void put_piece_on_board(Board* board, int square, Koma koma, Teban side)
+{
+    board->squares[square] = koma;
+    BoardBitset* goteSquares = &board->goteSquares;
+    uint64_t mask = 1ULL << (square % BITS_PER_WORD);
+    if (koma != NO_KOMA && side == GOTE)
+        goteSquares->words[square / BITS_PER_WORD] |= mask;
+    else
+        goteSquares->words[square / BITS_PER_WORD] &= ~mask;
+}
+
+Board tsume_board_after_move(const Board* board, const Move* move)
+{
+    Board next = *board;
+    Koma placedPiece = move->kind == MOVE_PROMOTE ? tsume_promote(move->piece) : move->piece;
+    if (move->kind == MOVE_DROP) {
+        next.mochigoma[move->side][move->piece]--;
+    } else {
+        if (move->captured != NO_KOMA)
+            next.mochigoma[move->side][tsume_unpromote(move->captured)]++;
+        put_piece_on_board(&next, move->from, NO_KOMA, SENTE);
+    }
+    put_piece_on_board(&next, move->to, placedPiece, move->side);
+    return next;
+}
+
 void tsume_apply_move(Board* board, const Move* move)
 {
     Koma placedPiece = move->kind == MOVE_PROMOTE ? tsume_promote(move->piece) : move->piece;
@@ -259,9 +285,9 @@ void tsume_apply_move(Board* board, const Move* move)
     } else {
         if (move->captured != NO_KOMA)
             board->mochigoma[move->side][tsume_unpromote(move->captured)]++;
-        tsume_board_clear_square(board, move->from);
+        put_piece_on_board(board, move->from, NO_KOMA, SENTE);
     }
-    tsume_board_set_piece(board, move->to, placedPiece, move->side);
+    put_piece_on_board(board, move->to, placedPiece, move->side);
 }
 
 static int find_king(const Board* board, Teban side)
@@ -351,8 +377,7 @@ void tsume_generate_legal_moves_with_scratch(const Board* board, Teban side, boo
     moves->count = 0;
     for (int i = 0; i < pseudoMoves->count; i++) {
         Move move = pseudoMoves->moves[i];
-        Board next = *board;
-        tsume_apply_move(&next, &move);
+        Board next = tsume_board_after_move(board, &move);
         if (tsume_is_in_check(&next, side))
             continue;
         if (onlyCheckingMoves && !tsume_is_in_check(&next, tsume_opponent(side)))

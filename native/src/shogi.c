@@ -71,26 +71,58 @@ Teban tsume_board_square_side(const Board* board, int square)
     return tsume_board_is_gote_square(board, square) ? GOTE : SENTE;
 }
 
-void tsume_board_init(Board* board)
+static void init_board(Board* board)
 {
     memset(board, 0, sizeof(*board));
     for (int square = 0; square < BOARD_SQUARE_COUNT; square++)
         board->squares[square] = NO_KOMA;
 }
 
-void tsume_board_set_piece(Board* board, int square, Koma koma, Teban side)
+static void put_piece(Board* board, int square, Koma koma, Teban side)
 {
     board->squares[square] = koma;
-    if (side == GOTE)
+    if (koma == NO_KOMA)
+        clear_gote_square(board, square);
+    else if (side == GOTE)
         set_gote_square(board, square);
     else
         clear_gote_square(board, square);
 }
 
+Board tsume_empty_board(void)
+{
+    Board board;
+    init_board(&board);
+    return board;
+}
+
+Board tsume_board_with_piece(const Board* board, int square, Koma koma, Teban side)
+{
+    Board next = *board;
+    put_piece(&next, square, koma, side);
+    return next;
+}
+
+Board tsume_board_without_piece(const Board* board, int square)
+{
+    Board next = *board;
+    put_piece(&next, square, NO_KOMA, SENTE);
+    return next;
+}
+
+void tsume_board_init(Board* board)
+{
+    init_board(board);
+}
+
+void tsume_board_set_piece(Board* board, int square, Koma koma, Teban side)
+{
+    put_piece(board, square, koma, side);
+}
+
 void tsume_board_clear_square(Board* board, int square)
 {
-    board->squares[square] = NO_KOMA;
-    clear_gote_square(board, square);
+    put_piece(board, square, NO_KOMA, SENTE);
 }
 
 Koma tsume_promote(Koma koma)

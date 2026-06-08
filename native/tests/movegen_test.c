@@ -21,6 +21,19 @@ int main(void)
     tsume_generate_legal_moves(&board, SENTE, false, &moves);
     ASSERT_TRUE(has_move_to(&moves, tsume_square_index(5, 4)));
 
+    Move pawnMove = { 0 };
+    for (int i = 0; i < moves.count; i++) {
+        if (moves.moves[i].to == tsume_square_index(5, 4)) {
+            pawnMove = moves.moves[i];
+            break;
+        }
+    }
+    Board nextBoard = tsume_board_after_move(&board, &pawnMove);
+    ASSERT_EQ_INT(FU, nextBoard.squares[tsume_square_index(5, 4)]);
+    ASSERT_EQ_INT(NO_KOMA, nextBoard.squares[tsume_square_index(6, 4)]);
+    ASSERT_EQ_INT(FU, board.squares[tsume_square_index(6, 4)]);
+    ASSERT_EQ_INT(NO_KOMA, board.squares[tsume_square_index(5, 4)]);
+
     board.mochigoma[SENTE][KIN] = 1;
     moves.count = 0;
     tsume_generate_legal_moves(&board, SENTE, false, &moves);

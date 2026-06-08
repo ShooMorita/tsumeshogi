@@ -126,7 +126,7 @@ static void append_frames_json(char* buffer, size_t bufferSize, size_t* offset, 
     append_text(buffer, bufferSize, offset, "\"frames\":[");
     for (int i = 0; i < line->count; i++) {
         Move move = line->moves[i];
-        tsume_apply_move(&currentBoard, &move);
+        currentBoard = tsume_board_after_move(&currentBoard, &move);
 
         if (i > 0)
             append_text(buffer, bufferSize, offset, ",");
@@ -143,13 +143,13 @@ static void append_frames_json(char* buffer, size_t bufferSize, size_t* offset, 
 char* tsume_solve_json(const char* input, int maxPly)
 {
     tsume_init();
-    Board board;
-    TsumeParseResult parseResult = tsume_parse_board_text(input, &board);
+    TsumeParseBoardResult parseResult = tsume_parse_board_text_value(input);
     if (parseResult.status != TSUME_OK) {
         char error[512];
         snprintf(error, sizeof(error), "{\"ok\":false,\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}", status_code(parseResult.status), parseResult.message);
         return duplicate_json(error);
     }
+    Board board = parseResult.board;
 
     TsumeLine line = { 0 };
     TsumeSolveResult solveResult = tsume_solve_dfpn(&board, maxPly, &line);

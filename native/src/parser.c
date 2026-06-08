@@ -21,15 +21,6 @@ static bool is_delimiter(char character)
     return character == '\0' || character == ' ' || character == '\n' || character == '\r';
 }
 
-static int consume_ten_if_present(const char** countText)
-{
-    const size_t juLen = strlen("十");
-    if (strncmp(*countText, "十", juLen) != 0)
-        return 0;
-    *countText += juLen;
-    return 10;
-}
-
 static int parse_count(const char* countText)
 {
     if (!countText || is_delimiter(*countText))
@@ -37,7 +28,12 @@ static int parse_count(const char* countText)
     if ('0' <= countText[0] && countText[0] <= '9')
         return countText[0] - '0';
 
-    int count = consume_ten_if_present(&countText);
+    int count = 0;
+    const size_t juLen = strlen("十");
+    if (strncmp(countText, "十", juLen) == 0) {
+        count = 10;
+        countText += juLen;
+    }
     if (is_delimiter(*countText))
         return count > 0 ? count : 1;
 
@@ -57,81 +53,96 @@ static Teban parse_mochigoma_owner(const char* line)
     return (strncmp(line, "後手", strlen("後手")) == 0) ? GOTE : SENTE;
 }
 
-static const char* find_mochigoma_list_start(const char* line)
+static const char* find_mochigoma_list_start(const char* line, size_t lineLen)
 {
-    const char* zenkakuColon = strstr(line, "：");
-    if (zenkakuColon)
-        return zenkakuColon + strlen("：");
+    const char* lineEnd = line + lineLen;
+    const size_t zenkakuColonLen = strlen("：");
 
-    const char* asciiColon = strchr(line, ':');
-    return asciiColon ? asciiColon + 1 : NULL;
+    for (const char* current = line; current < lineEnd; current++) {
+        if (*current == ':')
+            return current + 1;
+        if (current + zenkakuColonLen <= lineEnd && strncmp(current, "：", zenkakuColonLen) == 0)
+            return current + zenkakuColonLen;
+    }
+    return NULL;
 }
 
-static void skip_spaces(const char** text)
+static const char* skip_spaces(const char* text)
 {
-    while (**text == ' ')
-        (*text)++;
+    while (*text == ' ')
+        text++;
+    return text;
 }
 
-static bool match_koma_name(const char* text, Koma komaLimit, Koma* matchedKoma, size_t* matchedNameLen)
+typedef struct {
+    Koma koma;
+    size_t nameLen;
+    bool matched;
+} KomaMatch;
+
+static KomaMatch match_koma_name(const char* text, Koma komaLimit)
 {
     for (Koma koma = 0; koma < komaLimit; koma++) {
         const char* komaName = tsume_koma_name(koma);
         size_t nameLen = strlen(komaName);
-        if (nameLen > 0 && strncmp(text, komaName, nameLen) == 0) {
-            *matchedKoma = koma;
-            *matchedNameLen = nameLen;
-            return true;
-        }
+        if (nameLen > 0 && strncmp(text, komaName, nameLen) == 0)
+            return (KomaMatch) { koma, nameLen, true };
     }
 
-    *matchedKoma = NO_KOMA;
-    *matchedNameLen = 0;
-    return false;
+    return (KomaMatch) { NO_KOMA, 0, false };
 }
 
-static void copy_count_text(const char** text, char* countBuffer, size_t countBufferSize)
+static const char* skip_current_token(const char* text)
 {
-    size_t writeIndex = 0;
-    while (!is_delimiter(**text) && writeIndex + 1 < countBufferSize) {
-        countBuffer[writeIndex++] = **text;
-        (*text)++;
-    }
-    countBuffer[writeIndex] = '\0';
+    while (!is_delimiter(*text))
+        text++;
+    return text;
 }
 
-static void skip_current_token(const char** text)
+typedef struct {
+    Koma koma;
+    int count;
+    const char* nextText;
+    bool matched;
+} MochigomaToken;
+
+static MochigomaToken parse_mochigoma_token(const char* text)
 {
-    while (!is_delimiter(**text))
-        (*text)++;
+    const char* tokenStart = skip_spaces(text);
+    KomaMatch match = match_koma_name(tokenStart, MOCHIGOMA_LIMIT);
+    if (!match.matched)
+        return (MochigomaToken) { NO_KOMA, 0, skip_current_token(tokenStart), false };
+
+    const char* countText = tokenStart + match.nameLen;
+    return (MochigomaToken) {
+        match.koma,
+        parse_count(countText),
+        skip_current_token(countText),
+        true,
+    };
 }
 
-static void parse_mochigoma_line(Board* board, const char* line)
+static void parse_mochigoma_line(Board* board, const char* line, size_t lineLen)
 {
     Teban owner = parse_mochigoma_owner(line);
-    const char* currentText = find_mochigoma_list_start(line);
+    const char* currentText = find_mochigoma_list_start(line, lineLen);
     if (!currentText)
         return;
 
-    while (*currentText != '\0' && *currentText != '\n') {
-        skip_spaces(&currentText);
-        if (*currentText == '\0' || *currentText == '\n')
+    const char* lineEnd = line + lineLen;
+    while (currentText < lineEnd && *currentText != '\0' && *currentText != '\n') {
+        currentText = skip_spaces(currentText);
+        if (currentText >= lineEnd || *currentText == '\0' || *currentText == '\n')
             break;
 
         const size_t nashiLen = strlen("なし");
         if (strncmp(currentText, "なし", nashiLen) == 0)
             break;
 
-        Koma matchedKoma = NO_KOMA;
-        size_t nameLen = 0;
-        if (match_koma_name(currentText, MOCHIGOMA_LIMIT, &matchedKoma, &nameLen)) {
-            currentText += nameLen;
-            char countBuffer[16] = { 0 };
-            copy_count_text(&currentText, countBuffer, sizeof(countBuffer));
-            board->mochigoma[owner][matchedKoma] += (uint8_t)parse_count(countBuffer);
-        } else {
-            skip_current_token(&currentText);
-        }
+        MochigomaToken token = parse_mochigoma_token(currentText);
+        if (token.matched)
+            board->mochigoma[owner][token.koma] += (uint8_t)token.count;
+        currentText = token.nextText;
     }
 }
 
@@ -145,33 +156,31 @@ static const char* find_board_rows_start(const char* text)
     return firstRow ? firstRow + 1 : NULL;
 }
 
-static void parse_board_square(Board* board, int row, int col, const char** rowText)
-{
-    const int boardIndex = tsume_square_index(row, col);
-    const size_t emptySquareLen = strlen("・");
+typedef struct {
+    Koma koma;
+    Teban side;
+    const char* nextText;
+} BoardSquareToken;
 
-    skip_spaces(rowText);
+static BoardSquareToken parse_board_square(const char* rowText)
+{
+    const size_t emptySquareLen = strlen("・");
+    const char* currentText = skip_spaces(rowText);
 
     Teban side = SENTE;
-    if (**rowText == 'v') {
+    if (*currentText == 'v') {
         side = GOTE;
-        (*rowText)++;
+        currentText++;
     }
 
-    if (strncmp(*rowText, "・", emptySquareLen) == 0) {
-        *rowText += emptySquareLen;
-        return;
-    }
+    if (strncmp(currentText, "・", emptySquareLen) == 0)
+        return (BoardSquareToken) { NO_KOMA, side, currentText + emptySquareLen };
 
-    Koma matchedKoma = NO_KOMA;
-    size_t nameLen = 0;
-    if (match_koma_name(*rowText, KOMA_KIND_COUNT, &matchedKoma, &nameLen)) {
-        tsume_board_set_piece(board, boardIndex, matchedKoma, side);
-        *rowText += nameLen;
-        return;
-    }
+    KomaMatch match = match_koma_name(currentText, KOMA_KIND_COUNT);
+    if (match.matched)
+        return (BoardSquareToken) { match.koma, side, currentText + match.nameLen };
 
-    *rowText += utf8_byte_len((unsigned char)**rowText);
+    return (BoardSquareToken) { NO_KOMA, side, currentText + utf8_byte_len((unsigned char)*currentText) };
 }
 
 static bool parse_board(Board* board, const char* text)
@@ -186,8 +195,12 @@ static bool parse_board(Board* board, const char* text)
             return false;
         currentRow++;
 
-        for (int col = 0; col < BOARD_SIZE; col++)
-            parse_board_square(board, row, col, &currentRow);
+        for (int col = 0; col < BOARD_SIZE; col++) {
+            BoardSquareToken token = parse_board_square(currentRow);
+            if (token.koma != NO_KOMA)
+                tsume_board_set_piece(board, tsume_square_index(row, col), token.koma, token.side);
+            currentRow = token.nextText;
+        }
 
         currentRow = strchr(currentRow, '\n');
         if (!currentRow && row != BOARD_SIZE - 1)
@@ -200,20 +213,27 @@ static bool parse_board(Board* board, const char* text)
 
 static bool line_contains(const char* line, size_t lineLen, const char* needle)
 {
-    const char* match = strstr(line, needle);
-    return match && match < line + lineLen;
+    size_t needleLen = strlen(needle);
+    if (needleLen == 0 || needleLen > lineLen)
+        return false;
+
+    for (size_t offset = 0; offset + needleLen <= lineLen; offset++) {
+        if (strncmp(line + offset, needle, needleLen) == 0)
+            return true;
+    }
+    return false;
 }
 
-TsumeParseResult tsume_parse_board_text(const char* input, Board* board)
+static TsumeParseResult parse_board_text_into(const char* input, Board* board)
 {
     TsumeParseResult result = { TSUME_OK, "" };
-    if (!input || !board) {
+    tsume_board_init(board);
+    if (!input) {
         result.status = TSUME_PARSE_ERROR;
-        snprintf(result.message, sizeof(result.message), "input and board are required");
+        snprintf(result.message, sizeof(result.message), "input is required");
         return result;
     }
 
-    tsume_board_init(board);
     const char* currentLine = input;
     bool boardParsed = false;
 
@@ -222,7 +242,7 @@ TsumeParseResult tsume_parse_board_text(const char* input, Board* board)
         size_t lineLen = nextLine ? (size_t)(nextLine - currentLine) : strlen(currentLine);
 
         if (line_contains(currentLine, lineLen, "持駒")) {
-            parse_mochigoma_line(board, currentLine);
+            parse_mochigoma_line(board, currentLine, lineLen);
         } else if (!boardParsed && (line_contains(currentLine, lineLen, "９ ８ ７") || line_contains(currentLine, lineLen, "+---"))) {
             boardParsed = parse_board(board, currentLine);
         }
@@ -235,4 +255,25 @@ TsumeParseResult tsume_parse_board_text(const char* input, Board* board)
         snprintf(result.message, sizeof(result.message), "could not find a complete 9x9 board");
     }
     return result;
+}
+
+TsumeParseBoardResult tsume_parse_board_text_value(const char* input)
+{
+    TsumeParseBoardResult result = { TSUME_OK, "", { 0 } };
+    TsumeParseResult parsed = parse_board_text_into(input, &result.board);
+    result.status = parsed.status;
+    snprintf(result.message, sizeof(result.message), "%s", parsed.message);
+    return result;
+}
+
+TsumeParseResult tsume_parse_board_text(const char* input, Board* board)
+{
+    TsumeParseResult result = { TSUME_OK, "" };
+    if (!input || !board) {
+        result.status = TSUME_PARSE_ERROR;
+        snprintf(result.message, sizeof(result.message), "input and board are required");
+        return result;
+    }
+
+    return parse_board_text_into(input, board);
 }

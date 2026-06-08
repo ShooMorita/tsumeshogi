@@ -67,6 +67,12 @@ typedef struct {
     char message[128];
 } TsumeParseResult;
 
+typedef struct {
+    TsumeStatus status;
+    char message[128];
+    Board board;
+} TsumeParseBoardResult;
+
 typedef enum {
     MOVE_NORMAL,
     MOVE_PROMOTE,
@@ -109,6 +115,9 @@ Teban tsume_opponent(Teban side);
 int tsume_square_index(int row, int col);
 int tsume_square_row(int square);
 int tsume_square_col(int square);
+Board tsume_empty_board(void);
+Board tsume_board_with_piece(const Board* board, int square, Koma koma, Teban side);
+Board tsume_board_without_piece(const Board* board, int square);
 void tsume_board_init(Board* board);
 void tsume_board_set_piece(Board* board, int square, Koma koma, Teban side);
 void tsume_board_clear_square(Board* board, int square);
@@ -120,11 +129,13 @@ Koma tsume_promote(Koma koma);
 Koma tsume_unpromote(Koma koma);
 bool tsume_can_promote(Koma koma);
 
+TsumeParseBoardResult tsume_parse_board_text_value(const char* input);
 TsumeParseResult tsume_parse_board_text(const char* input, Board* board);
 
 bool tsume_is_in_check(const Board* board, Teban side);
 void tsume_generate_legal_moves(const Board* board, Teban side, bool onlyCheckingMoves, MoveList* moves);
 void tsume_generate_legal_moves_with_scratch(const Board* board, Teban side, bool onlyCheckingMoves, MoveList* moves, MoveList* pseudoMoves);
+Board tsume_board_after_move(const Board* board, const Move* move);
 void tsume_apply_move(Board* board, const Move* move);
 
 TsumeSolveResult tsume_solve_dfpn(const Board* board, int maxPly, TsumeLine* line);
